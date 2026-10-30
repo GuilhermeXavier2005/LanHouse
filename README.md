@@ -1,12 +1,12 @@
 # LanHouse Monitor
 
-Sistema de gerenciamento e monitoramento de computadores para lan houses, desenvolvido como projeto acadêmico com foco em APIs, bancos de dados e sistemas distribuídos.
+Sistema de gerenciamento e monitoramento de computadores para lan houses, desenvolvido como projeto acadêmico com foco em banco de dados, conectividade e solução de problemas reais.
 
 ## Sobre o projeto
 
 O **LanHouse Monitor** tem como objetivo centralizar o gerenciamento das máquinas de uma lan house, permitindo acompanhar suas condições técnicas, registrar sessões de utilização e organizar informações sobre manutenção e serviços oferecidos.
 
-A proposta é facilitar a identificação de computadores indisponíveis, problemas recorrentes e utilização dos recursos, fornecendo ao responsável uma visão geral do ambiente em uma única aplicação.
+A proposta é facilitar a identificação de computadores indisponíveis, problemas recorrentes e utilização dos recursos, fornecendo ao responsável uma visão geral do ambiente em uma única aplicação. A principal intenção é entender como diferentes bancos e tecnologias podem ajudar em uma situação real de gerencia de comércio.
 
 O projeto também busca explorar o uso de diferentes modelos de bancos de dados, aplicando cada tecnologia a um tipo de informação específico.
 
@@ -17,8 +17,8 @@ O projeto também busca explorar o uso de diferentes modelos de bancos de dados,
 - Registrar sessões de utilização, incluindo máquina, usuário, duração e valor pago.
 - Manter registros de manutenção e incidentes técnicos.
 - Consultar o histórico de métricas e eventos das máquinas.
-- Aplicar operações CRUD por meio de uma API.
-- Estudar consistência, disponibilidade e limitações de diferentes bancos de dados.
+- Aplicar operações CRUD.
+- Estudar consistência, disponibilidade, conceitos e limitações de diferentes bancos de dados.
 
 ## Arquitetura
 
@@ -41,8 +41,8 @@ A aplicação segue uma arquitetura composta exclusivamente por:
                  |       Backend        |
                  |       API REST       |
                  +----+--------+--------+
-                      |        |
-              +-------+---+    +----------------+
+                            |   
+              +-------+---+----+----------------+
               |           |                     |
               v           v                     v
         +-----------+ +-----------+     +----------------+
@@ -50,8 +50,6 @@ A aplicação segue uma arquitetura composta exclusivamente por:
         |   RDB     | |   DB1     |     |      DB2       |
         +-----------+ +-----------+     +----------------+
 ```
-
-A arquitetura utiliza uma instância de cada banco de dados, sem réplicas ou particionamento distribuído.
 
 ## Bancos de dados
 
@@ -62,7 +60,6 @@ Responsável pelos dados cadastrais e transacionais que exigem relacionamentos e
 Principais informações:
 
 - Cadastro das máquinas e suas especificações.
-- Cadastro básico de usuários.
 - Sessões de utilização, com horário de início e término.
 - Valores cobrados e pagamentos registrados.
 - Planos e serviços oferecidos pela lan house.
@@ -109,7 +106,6 @@ O Cassandra será utilizado para consultas de histórico técnico organizadas po
 - [ ] Registro de manutenções preventivas e corretivas.
 - [ ] Consulta dos programas instalados por máquina.
 - [ ] Visualização de indicadores de utilização e condições técnicas.
-- [ ] Testes das operações da API e do comportamento diante de falhas nos bancos.
 
 ## Tecnologias
 
@@ -133,6 +129,25 @@ As tecnologias serão definidas conforme a implementação do projeto.
 - A indisponibilidade de um banco deverá ser tratada pelo backend, sem presumir que os dados estejam disponíveis em outra fonte.
 - Informações de usuários serão limitadas ao necessário para identificar e registrar as sessões de utilização.
 - Não fazem parte do escopo inicial o controle remoto das máquinas, o sistema completo de caixa ou a gestão comercial avançada.
+
+## Perguntas pertinentes ao projeto
+
+- Considerando o teorema CAP, o que pode acontecer quando cada um dos bancos não estiver disponível?
+  A indisponibilidade do banco de dados principal POSTGRESQL é a única situação capaz de parar o funcionamento do total do serviço, pois interrompe funcionalidades vitais como <strong>registrar pagamentos, consultar registros  e consultar serviços.</strong>
+  Para o MONGODB os impactos são menores, sem interromper completamente o funcionamento. As principais funcionalidades afetadas são <strong>registro detalhado de eventos na máquina, logs de estado da máquina e informações do usuário naquela máquina.</strong>
+  O APACHE CASSANDRA tem um menor potencial de impactar o serviço, as funcionalidades que serão desativadas em decorrência de problemas técnicos serão <strong>consultas de consumo de CPU, RAM e desempenho, ultimo usuário e programa executado.</strong>
+
+- Descreva como cada um dos bancos trabalha com o princípio de consistência.
+  A escolha de cada um dos bancos é baseado na consistência de cada um. O banco POSTGRESQL trabalha com consistência (C) e disponibilidade de dados (A), vai assegurar informações mais críticas do projeto funcionando como a base principal de registros.
+  MONGODB funcionará com o principio de consistência (C) e tolerância ao particionamento (P), contém informações de sessões, detalhes de erros e mudanças de estado da máquina.
+  O APACHE CASSANDRA opera com disponibilidade (A) e particionamento (P), a opção de wide-column será usado para informações mais recentes e específicas da máquina.
+
+- Para os bancos não-relacionais que possuem mais do que uma réplica e/ou particionamento, o que ocorre quando uma instância do banco fica indisponível? Quantas instâncias podem ficar indisponível e ainda garantir a consistência dos dados?
+  Um Replica Set de três membros no MongoDB será uma estrutura em que manterá três instâncias do MongoDB com os mesmos dados, trabalhando em conjunto. A ideia é que, se uma instância falhar, as outras possam continuar atendendo às operações sem paradas e pode garantir a consistência.
+  Primary: recebe as operações de escrita, como inserções, atualizações e exclusões.
+  Secondary 1: replica as alterações realizadas no Primary.
+  Secondary 2: também replica as alterações realizadas no Primary.
+  
 
 ## Execução e instalação
 
@@ -160,6 +175,8 @@ Também serão estudadas as garantias de consistência, as limitações de dispo
 
 As funcionalidades e a documentação serão atualizadas conforme a implementação evoluir.
 
-## Licença
+## Integrantes
 
-A licença do projeto será definida pelos integrantes do grupo.
+Rafael Almeida Ferreira (colaborador)
+Enrico Nascimento Silva (colaborador)
+Guilherme Silva Xavier
