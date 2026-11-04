@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="LanHouse Monitor — gerenciamento e monitoramento de computadores de lan house">
+  <title>LanHouse Monitor</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar" aria-label="Navegação principal"></aside>
+    <div class="scrim" id="scrim"></div>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="view" id="view" tabindex="-1"></main>
+    </div>
+  </div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <noscript>Este painel precisa de JavaScript habilitado.</noscript>
+  <script>
+    // Navegadores bloqueiam ES Modules em file://. Em vez de uma tela vazia, explica como abrir.
+    if (location.protocol === 'file:') {
+      document.getElementById('sidebar').hidden = true;
+      document.getElementById('topbar').hidden = true;
+      document.getElementById('app').style.gridTemplateColumns = '1fr';
+      document.getElementById('view').innerHTML =
+        '<section class="card" style="max-width:640px;margin:10vh auto 0">' +
+        '<header class="card-header"><div class="card-title"><h2>Abra o painel pelo servidor local</h2></div></header>' +
+        '<div class="card-body">' +
+        '<p style="margin-top:0;color:var(--text-2)">Este arquivo foi aberto direto do disco (<code class="mono">file://</code>). ' +
+        'Por segurança, o navegador não executa o JavaScript do painel assim.</p>' +
+        '<p style="color:var(--text-2)"><strong style="color:var(--text)">Jeito mais fácil:</strong> dê dois cliques em ' +
+        '<code class="mono text-primary">iniciar.bat</code>, nesta mesma pasta. O navegador abre sozinho.</p>' +
+        '<p style="color:var(--text-2)"><strong style="color:var(--text)">Pelo terminal</strong>, dentro da pasta <code class="mono">frontend</code>:</p>' +
+        '<pre class="json">py serve.py</pre>' +
+        '<p style="margin-bottom:0;color:var(--text-2)">Depois acesse <a href="http://localhost:5173">http://localhost:5173</a> ' +
+        '(deixe a janela do servidor aberta enquanto usa o painel).</p>' +
+        '</div></section>';
+    }
+  </script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
