@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lanhouse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lanhouse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lanhouse}
+      POSTGRES_DB: ${POSTGRES_DB:-lanhouse}
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./Banco/PostgreSql/01_ddl_lanhouse.sql:/docker-entrypoint-initdb.d/01_ddl_lanhouse.sql:ro
+      - ./Banco/PostgreSql/02_dml_lanhouse.sql:/docker-entrypoint-initdb.d/02_dml_lanhouse.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lanhouse} -d ${POSTGRES_DB:-lanhouse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mongo1:
+    image: mongo:7.0
+    container_name: lanhouse-mongo1
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo1_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27017", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mongo2:
+    image: mongo:7.0
+    container_name: lanhouse-mongo2
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo2_data:/data/db
+
+  mongo3:
+    image: mongo:7.0
+    container_name: lanhouse-mongo3
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongo3_data:/data/db
+
+  mongo-init-replica:
+    image: mongo:7.0
+    container_name: lanhouse-mongo-init
+    depends_on:
+      - mongo1
+      - mongo2
+      - mongo3
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+      - |
+        echo "Aguardando nós do MongoDB..."
+        sleep 3
+        mongosh --host mongo1:27017 --eval '
+          try {
+            var status = rs.status();
+            print("Replica Set já configurado.");
+          } catch (e) {
+            print("Inicializando Replica Set rs0...");
+            rs.initiate({
+              _id: "rs0",
+              members: [
+                { _id: 0, host: "mongo1:27017", priority: 2 },
+                { _id: 1, host: "mongo2:27017", priority: 1 },
+                { _id: 2, host: "mongo3:27017", priority: 1 }
+              ]
+            });
+            print("Replica Set inicializado com sucesso.");
+          }
+        '
+
+volumes:
+  pgdata:
+  mongo1_data:
+  mongo2_data:
+  mongo3_data:

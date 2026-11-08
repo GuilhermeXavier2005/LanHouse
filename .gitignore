@@ -1,0 +1,16 @@
+# Ambientes virtuais Python e cache
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Variáveis de ambiente locais (o .env.example vai para o Git)
+.env
+
+# Sistema Operacional / IDEs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

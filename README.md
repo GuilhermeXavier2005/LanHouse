@@ -284,3 +284,73 @@ O LanHouse Monitor propõe uma arquitetura que combina diferentes modelos de ban
 O PostgreSQL será responsável pela integridade das informações estruturadas, o MongoDB pelo armazenamento flexível de eventos e diagnósticos, e o Cassandra pelo armazenamento distribuído de métricas temporais.
 
 A utilização conjunta dessas tecnologias permite explorar diferentes estratégias de persistência, consistência, replicação e tolerância a falhas em uma aplicação prática.
+
+
+---
+
+## 11. Estrutura de Implementação do Backend e Fluxo Poliglota
+
+Seguindo o modelo de **Persistência Poliglota** (`FE <--> BE`, `BE <--> RDB`, `BE <--> DB1`, `BE <--> DB2`), o Backend em `Backend/app/` foi organizado em módulos desacoplados por banco de dados:
+
+```mermaid
+graph LR
+    FE["FE: Frontend Web (:5173)"] <--> BE["BE: FastAPI Backend (:8000/api)"]
+    BE <--> RDB[("RDB: PostgreSQL (:5432)<br/>Cadastros, Sessões, Incidentes, KPIs")]
+    BE <--> DB1[("DB1: MongoDB Replica Set rs0 (:27017-27019)<br/>Eventos e Diagnósticos BSON")]
+    BE <--> DB2[("DB2: Apache Cassandra (:9042)<br/>Séries Temporais de Telemetria")]
+```
+
+- **Serviço Relacional (`RDB` — PostgreSQL)**:
+  - Conexão e extensão de schema em `Backend/app/database/postgres.py`.
+  - Rotas CRUD completas em `routers/machines.py`, `routers/sessions.py`, `routers/resources.py` (`/users`, `/plans`, `/programs`, `/incidents`, `/maintenances`) e `routers/reports.py`.
+- **Serviço Documental (`DB1` — MongoDB)**:
+  - Conexão com descoberta automática do nó primário do Replica Set `rs0` em `Backend/app/database/mongodb.py`.
+  - Rotas CRUD completas de documentos de eventos em `routers/events.py` e gravação transversal resiliente em `services/event_logger.py` (garantindo que a queda do MongoDB retorne avisos `_warnings` sem interromper as transações ACID do PostgreSQL).
+- **Serviço Colunar (`DB2` — Apache Cassandra)**:
+  - Isolado em `services/cassandra_service.py` e `routers/metrics.py` para consulta de telemetria e séries temporais.
+
+---
+
+## 12. Como Executar o Projeto (Do Zero)
+
+### Pré-requisitos
+- **Docker** e **Docker Compose** (para subir o PostgreSQL e o Replica Set de 3 nós do MongoDB)
+- **Python 3.10+** (para executar o Backend FastAPI e o servidor estático do Frontend)
+
+### Passo 1: Subir os Bancos de Dados (Docker Compose)
+Na raiz do repositório (`c:\LanHouse`), execute:
+
+```bash
+docker compose up -d
+```
+
+Serviços iniciados automaticamente:
+- `lanhouse-postgres` (PostgreSQL 16 na porta `5432`, já populado automaticamente com `Banco/PostgreSql/01_ddl_lanhouse.sql` e `02_dml_lanhouse.sql`).
+- `lanhouse-mongo1` (`:27017`), `lanhouse-mongo2` (`:27018`) e `lanhouse-mongo3` (`:27019`) + `lanhouse-mongo-init` (inicializa automaticamente o Replica Set `rs0`).
+
+### Passo 2: Iniciar o Backend (FastAPI / Uvicorn na porta 8000)
+No Windows, basta dar dois cliques em `iniciar_backend.bat` na raiz do projeto, ou executar no terminal:
+
+```bash
+cd Backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python run.py
+```
+
+- **API Base URL**: `http://localhost:8000/api`
+- **Documentação Interativa (Swagger UI)**: `http://localhost:8000/docs`
+- **Health Check dos Bancos**: `http://localhost:8000/api/health`
+
+### Passo 3: Iniciar o Frontend (Porta 5173) e Conectar à API Real
+Em outro terminal (ou dando dois cliques em `Frontend/iniciar.bat`):
+
+```bash
+cd Frontend
+py serve.py
+```
+
+1. Acesse `http://localhost:5173` no navegador.
+2. No menu lateral, clique em **Bancos & API** (`#/sistema`).
+3. Em **Fonte de dados**, alterne de *Demonstração (mock)* para **API real**, mantenha a URL `http://localhost:8000/api`, clique em **Testar conexão** e depois em **Salvar e recarregar**.
