@@ -7,6 +7,10 @@ from app import config
 from app.errors import ApiError, api_error_handler, validation_error_handler
 from app.database.postgres import ensure_schema_extension
 from app.database.mongodb import seed_initial_events
+from app.services.cassandra_service import (
+    start_cassandra_background_worker,
+    stop_cassandra_background_worker,
+)
 
 from app.routers import health, machines, sessions, resources, reports, events, metrics
 
@@ -15,14 +19,16 @@ async def lifespan(app: FastAPI):
     print("=" * 60)
     print("Iniciando LanHouse Monitor Back-end API...")
     print(f"CORS liberado para: {config.CORS_ORIGIN}")
-    # Inicializa schema complementar e seeds
+    # Inicializa schema complementar e seeds (PostgreSQL, MongoDB e Cassandra)
     ensure_schema_extension()
     seed_initial_events()
+    start_cassandra_background_worker()
     print("Sistema pronto na porta 8000!")
     print("Swagger UI disponível em: http://localhost:8000/docs")
     print("=" * 60)
     yield
     print("Encerrando LanHouse Monitor Back-end...")
+    stop_cassandra_background_worker()
 
 app = FastAPI(
     title="LanHouse Monitor API",
