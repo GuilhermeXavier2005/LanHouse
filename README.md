@@ -295,9 +295,9 @@ Seguindo o modelo de **Persistência Poliglota** (`FE <--> BE`, `BE <--> RDB`, `
 ```mermaid
 graph LR
     FE["FE: Frontend Web (:5173)"] <--> BE["BE: FastAPI Backend (:8000/api)"]
-    BE <--> RDB[("RDB: PostgreSQL (:5432)<br/>Cadastros, Sessões, Incidentes, KPIs")]
+    BE <--> RDB[("RDB: PostgreSQL (:5433->5432)<br/>Cadastros, Sessões, Incidentes, KPIs")]
     BE <--> DB1[("DB1: MongoDB Replica Set rs0 (:27017-27019)<br/>Eventos e Diagnósticos BSON")]
-    BE <--> DB2[("DB2: Apache Cassandra (:9042)<br/>Séries Temporais de Telemetria")]
+    BE <--> DB2[("DB2: Apache Cassandra Cluster 3 Nós (:9042-9044)<br/>Séries Temporais de Telemetria (RF=3, QUORUM)")]
 ```
 
 - **Serviço Relacional (`RDB` — PostgreSQL)**:
@@ -307,14 +307,15 @@ graph LR
   - Conexão com descoberta automática do nó primário do Replica Set `rs0` em `Backend/app/database/mongodb.py`.
   - Rotas CRUD completas de documentos de eventos em `routers/events.py` e gravação transversal resiliente em `services/event_logger.py` (garantindo que a queda do MongoDB retorne avisos `_warnings` sem interromper as transações ACID do PostgreSQL).
 - **Serviço Colunar (`DB2` — Apache Cassandra)**:
-  - Isolado em `services/cassandra_service.py` e `routers/metrics.py` para consulta de telemetria e séries temporais.
+  - Modelagem CQL oficial em `Banco/Cassandra/01_ddl_lanhouse.cql` (`NetworkTopologyStrategy` com `replication_factor: 3`, tabela histórica `metrics_by_machine` particionada por `(machine_id, day)` com `CLUSTERING ORDER BY (ts DESC)` e tabela de última leitura `latest_metrics_by_machine`).
+  - Conexão distribuída com failover automático entre as portas do host (`9042`, `9043`, `9044`), consistência `ConsistencyLevel.QUORUM` (2 de 3 réplicas), seed histórico de 7 dias e coletor em tempo real (a cada 10s) em `services/cassandra_service.py` e `routers/metrics.py` (incluindo CRUD completo via `GET`, `POST`, `PUT` e `DELETE /machines/{id}/metrics`).
 
 ---
 
 ## 12. Como Executar o Projeto (Do Zero)
 
 ### Pré-requisitos
-- **Docker** e **Docker Compose** (para subir o PostgreSQL e o Replica Set de 3 nós do MongoDB)
+- **Docker** e **Docker Compose** (para subir o PostgreSQL, o Replica Set de 3 nós do MongoDB e o Cluster de 3 nós do Apache Cassandra)
 - **Python 3.10+** (para executar o Backend FastAPI e o servidor estático do Frontend)
 
 ### Passo 1: Subir os Bancos de Dados (Docker Compose)
@@ -325,8 +326,10 @@ docker compose up -d
 ```
 
 Serviços iniciados automaticamente:
-- `lanhouse-postgres` (PostgreSQL 16 na porta `5432`, já populado automaticamente com `Banco/PostgreSql/01_ddl_lanhouse.sql` e `02_dml_lanhouse.sql`).
+- `lanhouse-postgres` (PostgreSQL 16 exposto na porta `5433` do host, já populado automaticamente com `Banco/PostgreSql/01_ddl_lanhouse.sql` e `02_dml_lanhouse.sql`).
 - `lanhouse-mongo1` (`:27017`), `lanhouse-mongo2` (`:27018`) e `lanhouse-mongo3` (`:27019`) + `lanhouse-mongo-init` (inicializa automaticamente o Replica Set `rs0`).
+- `lanhouse-cassandra1` (`:9042`), `lanhouse-cassandra2` (`:9043`) e `lanhouse-cassandra3` (`:9044`) formando o cluster `LanHouseCluster` (`datacenter1`).
+  > **Nota:** O Cassandra leva cerca de 60 a 120 segundos para inicializar os 3 nós sequencialmente. O Backend aguarda automaticamente o quórum (`2/3` nós ativos) em background antes de criar o keyspace e popular os 7 dias de telemetria.
 
 ### Passo 2: Iniciar o Backend (FastAPI / Uvicorn na porta 8000)
 No Windows, basta dar dois cliques em `iniciar_backend.bat` na raiz do projeto, ou executar no terminal:
@@ -354,3 +357,23 @@ py serve.py
 1. Acesse `http://localhost:5173` no navegador.
 2. No menu lateral, clique em **Bancos & API** (`#/sistema`).
 3. Em **Fonte de dados**, alterne de *Demonstração (mock)* para **API real**, mantenha a URL `http://localhost:8000/api`, clique em **Testar conexão** e depois em **Salvar e recarregar**.
+
+### Passo 4: Testando Tolerância a Falhas no Cluster Cassandra (RF=3, QUORUM)
+Para verificar o estado do anel distribuído de 3 nós:
+```bash
+docker exec lanhouse-cassandra1 nodetool status
+```
+- **Tolerância a 1 falha (2/3 réplicas ativas = QUORUM mantido):**
+  ```bash
+  docker stop lanhouse-cassandra1
+  ```
+  Mesmo derrubando o nó `cassandra1` (porta `9042`), o Backend faz failover imediato para `cassandra2` (`:9043`) ou `cassandra3` (`:9044`) e os gráficos de telemetria continuam funcionando normalmente.
+- **Perda de Quórum (1/3 réplica ativa = HTTP 503):**
+  ```bash
+  docker stop lanhouse-cassandra2
+  ```
+  Com 2 nós desligados, o nível `QUORUM` (que exige no mínimo 2 réplicas) falha e o Backend retorna `HTTP 503 Service Unavailable (DB_UNAVAILABLE: cassandra)` sem afetar o PostgreSQL nem o MongoDB.
+- **Recuperação do cluster:**
+  ```bash
+  docker start lanhouse-cassandra1 lanhouse-cassandra2
+  ```
