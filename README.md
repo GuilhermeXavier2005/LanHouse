@@ -21,9 +21,9 @@ A aplicação utiliza uma arquitetura com um frontend, um backend e três bancos
 
 ## 2. Integrantes
 
-- [Nome completo do integrante 1]
-- [Nome completo do integrante 2]
-- [Nome completo do integrante 3]
+- Enrico Nascimento
+- Guilherme Xavier
+- Rafael Almeida
 
 ---
 
