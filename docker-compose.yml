@@ -1,0 +1,209 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lanhouse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lanhouse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lanhouse}
+      POSTGRES_DB: ${POSTGRES_DB:-lanhouse}
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./Banco/PostgreSql/01_ddl_lanhouse.sql:/docker-entrypoint-initdb.d/01_ddl_lanhouse.sql:ro
+      - ./Banco/PostgreSql/02_dml_lanhouse.sql:/docker-entrypoint-initdb.d/02_dml_lanhouse.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lanhouse} -d ${POSTGRES_DB:-lanhouse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mongo1:
+    image: mongo:7.0
+    container_name: lanhouse-mongo1
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo1_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27017", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mongo2:
+    image: mongo:7.0
+    container_name: lanhouse-mongo2
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo2_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27017", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mongo3:
+    image: mongo:7.0
+    container_name: lanhouse-mongo3
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongo3_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27017", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mongo-init-replica:
+    image: mongo:7.0
+    container_name: lanhouse-mongo-init
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_healthy
+      mongo3:
+        condition: service_healthy
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+      - |
+        echo "Aguardando nós do MongoDB..."
+        for i in $$(seq 1 30); do
+          mongosh --host mongo1:27017 --quiet --eval "db.adminCommand('ping')" > /dev/null 2>&1 && break
+          sleep 2
+        done
+        mongosh --host mongo1:27017 --eval '
+          try {
+            var status = rs.status();
+            print("Replica Set já configurado.");
+          } catch (e) {
+            print("Inicializando Replica Set rs0...");
+            rs.initiate({
+              _id: "rs0",
+              members: [
+                { _id: 0, host: "mongo1:27017", priority: 2 },
+                { _id: 1, host: "mongo2:27017", priority: 1 },
+                { _id: 2, host: "mongo3:27017", priority: 1 }
+              ]
+            });
+            print("Replica Set inicializado com sucesso.");
+          }
+        '
+
+  cassandra1:
+    image: cassandra:4.1
+    container_name: lanhouse-cassandra1
+    restart: unless-stopped
+    environment:
+      CASSANDRA_CLUSTER_NAME: "LanHouseCluster"
+      CASSANDRA_DC: "datacenter1"
+      CASSANDRA_RACK: "rack1"
+      CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
+      CASSANDRA_SEEDS: "cassandra1"
+      MAX_HEAP_SIZE: "512M"
+      HEAP_NEWSIZE: "100M"
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra1_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 40s
+
+  cassandra2:
+    image: cassandra:4.1
+    container_name: lanhouse-cassandra2
+    restart: unless-stopped
+    depends_on:
+      cassandra1:
+        condition: service_healthy
+    environment:
+      CASSANDRA_CLUSTER_NAME: "LanHouseCluster"
+      CASSANDRA_DC: "datacenter1"
+      CASSANDRA_RACK: "rack1"
+      CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
+      CASSANDRA_SEEDS: "cassandra1"
+      MAX_HEAP_SIZE: "512M"
+      HEAP_NEWSIZE: "100M"
+    ports:
+      - "9043:9042"
+    volumes:
+      - cassandra2_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 40s
+
+  cassandra3:
+    image: cassandra:4.1
+    container_name: lanhouse-cassandra3
+    restart: unless-stopped
+    depends_on:
+      cassandra2:
+        condition: service_healthy
+    environment:
+      CASSANDRA_CLUSTER_NAME: "LanHouseCluster"
+      CASSANDRA_DC: "datacenter1"
+      CASSANDRA_RACK: "rack1"
+      CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
+      CASSANDRA_SEEDS: "cassandra1"
+      MAX_HEAP_SIZE: "512M"
+      HEAP_NEWSIZE: "100M"
+    ports:
+      - "9044:9042"
+    volumes:
+      - cassandra3_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 40s
+
+  # Aplica Banco/Cassandra/01_ddl_lanhouse.cql (keyspace RF=3 + tabelas) quando os 3 nós estão prontos.
+  # O script é idempotente (IF NOT EXISTS); o back-end também garante o schema ao iniciar.
+  cassandra-init:
+    image: cassandra:4.1
+    container_name: lanhouse-cassandra-init
+    depends_on:
+      cassandra3:
+        condition: service_healthy
+    restart: "no"
+    volumes:
+      - ./Banco/Cassandra/01_ddl_lanhouse.cql:/scripts/01_ddl_lanhouse.cql:ro
+    entrypoint:
+      - bash
+      - -c
+      - |
+        for i in $$(seq 1 30); do
+          cqlsh cassandra1 9042 -f /scripts/01_ddl_lanhouse.cql && echo "Schema Cassandra aplicado." && exit 0
+          echo "Cassandra ainda não está pronto, tentando novamente..."
+          sleep 5
+        done
+        exit 1
+
+volumes:
+  pgdata:
+  mongo1_data:
+  mongo2_data:
+  mongo3_data:
+  cassandra1_data:
+  cassandra2_data:
+  cassandra3_data:
