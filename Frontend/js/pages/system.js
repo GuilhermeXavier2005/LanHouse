@@ -5,7 +5,7 @@ import { h, append } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
 import { card, pageHeader, widget, button, segmented, badge, kv, notice } from '../ui/components.js';
 import { formModal, confirmDialog } from '../ui/modal.js';
-import { toast } from '../ui/toast.js';
+import { toast, toastError } from '../ui/toast.js';
 import { DB_SOURCES } from '../constants.js';
 import { money, date } from '../format.js';
 
@@ -108,8 +108,30 @@ export default {
         Object.entries(DB_SOURCES).map(([key, db]) => {
           const s = health.services[key];
           const up = s?.status === 'up';
-          const toggle = config.useMock
+          const toggle = !config.useMock
             ? h(
+                'label',
+                { class: 'switch' },
+                h('input', {
+                  type: 'checkbox',
+                  checked: !!s?.simulated,
+                  onchange: async (e) => {
+                    const down = e.target.checked;
+                    try {
+                      await api.simulate(key, down);
+                      toast(down ? `${db.label} derrubado na simulação (back-end responde 503 para esse banco). Navegue pelas telas para ver o impacto.` : `${db.label} restabelecido.`, down ? 'warning' : 'success', { title: 'Simulação de falha' });
+                    } catch (err) {
+                      e.target.checked = !down;
+                      toastError(err);
+                    }
+                    window.dispatchEvent(new Event('lanhouse:health'));
+                    healthCtl.refresh();
+                  },
+                }),
+                h('span', { class: 'switch-track' }),
+                'Simular indisponibilidade',
+              )
+            : h(
                 'label',
                 { class: 'switch' },
                 h('input', {
@@ -124,8 +146,7 @@ export default {
                 }),
                 h('span', { class: 'switch-track' }),
                 'Simular indisponibilidade',
-              )
-            : null;
+              );
           return h(
             'section',
             { class: `card db-card src-${key}` },

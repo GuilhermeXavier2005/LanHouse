@@ -1,7 +1,9 @@
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.schemas import Text, OptText, Money, IpAddress
 
 from app.database.postgres import get_db_cursor
 from app.errors import NotFoundError, ValidationError
@@ -85,15 +87,15 @@ def get_revenue(days: int = 7):
     return {"items": items}
 
 class InternetServiceUpdate(BaseModel):
-    provider: str
-    plan_name: Optional[str] = ""
-    download_mbps: int
-    upload_mbps: int
-    monthly_cost: Optional[float] = 0.0
-    contract_start: Optional[str] = None
-    public_ip: Optional[str] = None
+    provider: Text(120)
+    plan_name: OptText(120) = ""
+    download_mbps: int = Field(ge=1, le=1_000_000)
+    upload_mbps: int = Field(ge=1, le=1_000_000)
+    monthly_cost: Optional[Money] = 0.0
+    contract_start: Optional[date] = None
+    public_ip: IpAddress = None
     static_ip: Optional[bool] = True
-    support_phone: Optional[str] = None
+    support_phone: OptText(60) = None
 
 @router.get("/internet-service")
 def get_internet_service():

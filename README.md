@@ -7,6 +7,9 @@ O projeto tem como objetivo centralizar o acompanhamento das máquinas, permitin
 
 A aplicação utiliza uma arquitetura com um frontend, um backend e três bancos de dados com diferentes modelos de armazenamento, cada um responsável por um conjunto específico de informações.
 
+> **Para rodar o projeto:** vá direto para a [seção 12 — Como executar o projeto](#12-como-executar-o-projeto).
+> Resumo (Windows, com Docker Desktop aberto e Python instalado): dê dois cliques em **`iniciar_tudo.bat`** e abra <http://localhost:5173>.
+
 ---
 
 ## 1. Objetivos do projeto
@@ -39,7 +42,7 @@ O sistema será desenvolvido utilizando três componentes principais:
 
 ```text
                  FRONTEND
-                (React)
+          (HTML + CSS + JS)
                     |
                     |
                  BACKEND
@@ -123,7 +126,7 @@ O Cassandra foi escolhido por sua arquitetura distribuída, capacidade de escrit
 
 | Componente | Tecnologia | Justificativa |
 |---|---|---|
-| Frontend | JavaScript + React | Criação de interfaces dinâmicas e componentes reutilizáveis. |
+| Frontend | HTML + CSS + JavaScript (ES Modules, sem framework) | Interface leve, sem etapa de build nem `npm install`: basta um servidor de arquivos estáticos. |
 | Backend | Python + FastAPI | Desenvolvimento simplificado de APIs REST e facilidade de integração. |
 | Servidor da API | Uvicorn | Execução da aplicação FastAPI por meio do protocolo ASGI. |
 | Banco relacional | PostgreSQL / SQL | Manipulação de dados estruturados e relacionamentos. |
@@ -312,68 +315,287 @@ graph LR
 
 ---
 
-## 12. Como Executar o Projeto (Do Zero)
+## 12. Como executar o projeto
 
-### Pré-requisitos
-- **Docker** e **Docker Compose** (para subir o PostgreSQL, o Replica Set de 3 nós do MongoDB e o Cluster de 3 nós do Apache Cassandra)
-- **Python 3.10+** (para executar o Backend FastAPI e o servidor estático do Frontend)
+Esta seção é um roteiro completo para rodar o LanHouse Monitor **em qualquer computador, do zero**. Os três bancos sobem em containers Docker já populados com dados de exemplo; o back-end e o front-end rodam com Python.
 
-### Passo 1: Subir os Bancos de Dados (Docker Compose)
-Na raiz do repositório (`c:\LanHouse`), execute:
+### 12.1. Pré-requisitos
+
+| Programa | Versão | Para quê | Onde baixar |
+|---|---|---|---|
+| **Docker Desktop** (Windows/macOS) ou Docker Engine + Compose v2 (Linux) | Docker Compose v2 (comando `docker compose`) | Sobe PostgreSQL, MongoDB (3 nós) e Cassandra (3 nós) | <https://www.docker.com/products/docker-desktop/> |
+| **Python** | 3.10 a 3.14 (testado com 3.14) | Back-end FastAPI e servidor do front-end | <https://www.python.org/downloads/> — no Windows, marque **"Add python.exe to PATH"** |
+| Navegador | Chrome, Edge ou Firefox atuais | Painel web | — |
+
+Requisitos da máquina:
+
+- **Memória:** o cluster Cassandra de 3 nós usa cerca de 3 GB. Reserve **pelo menos 4 GB de RAM para o Docker** (Docker Desktop → *Settings → Resources*; no Windows com WSL 2 o padrão costuma ser suficiente).
+- **Internet** na primeira execução: o Docker baixa as imagens (cerca de 1 GB) e o `pip` instala as dependências do back-end.
+- **Portas livres:** `5173` (front-end), `8000` (API), `5433` (PostgreSQL), `27017–27019` (MongoDB) e `9042–9044` (Cassandra).
+
+> O PostgreSQL usa a porta **5433** no computador (e não a 5432) para não conflitar com um PostgreSQL que já esteja instalado no Windows.
+
+### 12.2. Baixar o projeto
+
+Escolha uma das opções:
+
+- **ZIP:** na página do repositório no GitHub (<https://github.com/GuilhermeXavier2005/LanHouse>), clique em **Code → Download ZIP** e extraia o arquivo. Use a pasta extraída que contém o `docker-compose.yml` (por exemplo, `LanHouse-main`).
+- **Git:**
+
+  ```bash
+  git clone https://github.com/GuilhermeXavier2005/LanHouse.git
+  cd LanHouse
+  ```
+
+Todos os comandos abaixo devem ser executados **na pasta raiz do projeto** (a que contém `docker-compose.yml`, `Backend/`, `Frontend/` e `Banco/`).
+
+### 12.3. Jeito rápido (Windows): um clique
+
+1. Abra o **Docker Desktop** e espere aparecer *Engine running*.
+2. Dê dois cliques em **`iniciar_tudo.bat`** (na raiz do projeto). Ele:
+   - sobe os 7 containers dos bancos e espera todos ficarem saudáveis (na primeira vez leva de **3 a 6 minutos**, por causa do download das imagens e do Cassandra);
+   - abre uma janela com o **back-end** (cria o ambiente virtual Python e instala as dependências na primeira vez);
+   - abre uma janela com o servidor do **front-end** e o navegador em <http://localhost:5173>.
+3. Mantenha as janelas abertas enquanto usa o sistema. Se o painel abrir antes de o back-end terminar de instalar, aguarde e aperte **F5**.
+
+Se preferir fazer etapa por etapa (ou estiver em Linux/macOS), siga a seção 12.4.
+
+### 12.4. Passo a passo manual
+
+#### Passo 1 — Subir os bancos de dados
 
 ```bash
 docker compose up -d
 ```
 
-Serviços iniciados automaticamente:
-- `lanhouse-postgres` (PostgreSQL 16 exposto na porta `5433` do host, já populado automaticamente com `Banco/PostgreSql/01_ddl_lanhouse.sql` e `02_dml_lanhouse.sql`).
-- `lanhouse-mongo1` (`:27017`), `lanhouse-mongo2` (`:27018`) e `lanhouse-mongo3` (`:27019`) + `lanhouse-mongo-init` (inicializa automaticamente o Replica Set `rs0`).
-- `lanhouse-cassandra1` (`:9042`), `lanhouse-cassandra2` (`:9043`) e `lanhouse-cassandra3` (`:9044`) formando o cluster `LanHouseCluster` (`datacenter1`).
-  > **Nota:** O Cassandra leva cerca de 60 a 120 segundos para inicializar os 3 nós sequencialmente. O Backend aguarda automaticamente o quórum (`2/3` nós ativos) em background antes de criar o keyspace e popular os 7 dias de telemetria.
+O Compose cria e inicializa tudo automaticamente:
 
-### Passo 2: Iniciar o Backend (FastAPI / Uvicorn na porta 8000)
-No Windows, basta dar dois cliques em `iniciar_backend.bat` na raiz do projeto, ou executar no terminal:
+| Container | Porta no computador | O que faz |
+|---|---|---|
+| `lanhouse-postgres` | 5433 | PostgreSQL 16. Na **primeira** subida executa `Banco/PostgreSql/01_ddl_lanhouse.sql` (tabelas) e `02_dml_lanhouse.sql` (dados de exemplo). |
+| `lanhouse-mongo1`, `lanhouse-mongo2`, `lanhouse-mongo3` | 27017, 27018, 27019 | MongoDB 7 em Replica Set `rs0` (3 membros). |
+| `lanhouse-mongo-init` | — | Executa uma vez `rs.initiate(...)` para criar o Replica Set e encerra (status *Exited (0)* é o esperado). |
+| `lanhouse-cassandra1`, `lanhouse-cassandra2`, `lanhouse-cassandra3` | 9042, 9043, 9044 | Cluster Cassandra 4.1 com 3 nós (`LanHouseCluster`). Os nós sobem em sequência. |
+| `lanhouse-cassandra-init` | — | Executa uma vez `Banco/Cassandra/01_ddl_lanhouse.cql` (keyspace com RF = 3 e tabelas) e encerra. |
+
+Acompanhe até os serviços aparecerem como `healthy` (o Cassandra leva de 2 a 4 minutos):
+
+```bash
+docker compose ps
+```
+
+Conferir o anel do Cassandra (os 3 nós devem aparecer como `UN` = *Up/Normal*):
+
+```bash
+docker exec lanhouse-cassandra1 nodetool status
+```
+
+#### Passo 2 — Iniciar o back-end (FastAPI na porta 8000)
+
+**Windows:** dois cliques em `iniciar_backend.bat`, ou no terminal:
 
 ```bash
 cd Backend
-python -m venv .venv
+py -3.14 -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+copy .env.example .env
 python run.py
 ```
 
-- **API Base URL**: `http://localhost:8000/api`
-- **Documentação Interativa (Swagger UI)**: `http://localhost:8000/docs`
-- **Health Check dos Bancos**: `http://localhost:8000/api/health`
+> `py -3.14` escolhe o Python 3.14; troque por `-3.13`, `-3.12`… conforme a versão instalada (`py -0` lista as versões). O `iniciar_backend.bat` faz essa escolha sozinho.
 
-### Passo 3: Iniciar o Frontend (Porta 5173) e Conectar à API Real
-Em outro terminal (ou dando dois cliques em `Frontend/iniciar.bat`):
+**Linux/macOS:**
+
+```bash
+cd Backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+python run.py
+```
+
+Ao iniciar, o back-end:
+
+- complementa o schema do PostgreSQL (tabelas `usuarios` e `planos` e colunas extras, tudo com `IF NOT EXISTS`) e insere os dados complementares;
+- insere eventos de exemplo no MongoDB, se a coleção estiver vazia;
+- aguarda o quórum do Cassandra, garante o keyspace/tabelas, grava **7 dias de histórico de telemetria** e passa a gravar uma nova amostra a cada 10 segundos.
+
+Endereços:
+
+- API: <http://localhost:8000/api>
+- Documentação interativa (Swagger): <http://localhost:8000/docs>
+- Saúde dos bancos: <http://localhost:8000/api/health> → deve mostrar `"status": "ok"` e os três serviços `"up"`.
+
+> Se o Cassandra aparecer `"down"` logo depois de subir os containers, é porque o cluster ainda está formando. O back-end tenta de novo sozinho a cada 5 segundos; não é preciso reiniciá-lo.
+
+#### Passo 3 — Iniciar o front-end (porta 5173)
+
+Em **outro** terminal (ou dois cliques em `Frontend/iniciar.bat`):
 
 ```bash
 cd Frontend
 py serve.py
 ```
 
-1. Acesse `http://localhost:5173` no navegador.
-2. No menu lateral, clique em **Bancos & API** (`#/sistema`).
-3. Em **Fonte de dados**, alterne de *Demonstração (mock)* para **API real**, mantenha a URL `http://localhost:8000/api`, clique em **Testar conexão** e depois em **Salvar e recarregar**.
+(Em Linux/macOS: `python3 serve.py`.) Abra <http://localhost:5173>.
 
-### Passo 4: Testando Tolerância a Falhas no Cluster Cassandra (RF=3, QUORUM)
-Para verificar o estado do anel distribuído de 3 nós:
+O painel já vem configurado para usar a **API real** (`http://localhost:8000/api`). O selo **"API real"** aparece no canto superior direito. Para conferir ou trocar, use o menu **Bancos & API → Fonte de dados**. O modo *Demonstração (mock)* existe só para apresentar a interface sem back-end; nele os dados ficam apenas no navegador.
+
+> Abrir o `index.html` direto pelo explorador de arquivos não funciona: o navegador bloqueia módulos JavaScript em `file://`. Use sempre o `serve.py`.
+
+### 12.5. Roteiro de uso (o que testar no painel)
+
+| Tela | O que fazer | Banco envolvido |
+|---|---|---|
+| **Visão geral** | Indicadores do dia e mapa do salão com CPU/RAM ao vivo de cada máquina. | PostgreSQL + Cassandra |
+| **Sessões** | *Nova sessão* → escolha máquina, usuário e plano → *Iniciar*. Depois *Encerrar*: o valor é calculado em blocos de 15 min e o pagamento é registrado. Tente iniciar uma sessão para um usuário que já está em sessão: a API recusa com uma mensagem (HTTP 409). | PostgreSQL (sessão) + MongoDB (eventos) |
+| **Máquinas** | Cadastrar, editar, mudar estado (manutenção/offline) e ver detalhes (programas instalados, histórico, eventos e métricas). | PostgreSQL |
+| **Métricas** | Última coleta de cada máquina e gráficos de CPU, GPU, RAM, disco, rede, latência e temperatura em 1 h, 6 h, 24 h ou 7 dias. | Cassandra (QUORUM) |
+| **Eventos** | Linha do tempo de documentos BSON (sessão iniciada/encerrada, mudança de estado, incidente aberto…), com filtro e visualização do JSON. | MongoDB |
+| **Incidentes / Manutenções** | Abrir, atender e resolver incidentes; registrar e concluir manutenções. | PostgreSQL |
+| **Usuários / Planos / Programas** | Cadastros básicos (CRUD completo). | PostgreSQL |
+| **Bancos & API** | Saúde e latência dos 3 bancos, dados do contrato de internet e a chave **Simular indisponibilidade** de cada banco (veja 12.7). | Todos |
+
+### 12.6. Consultar os dados diretamente nos bancos
+
+**PostgreSQL** (usuário `lanhouse`, senha `lanhouse`, banco `lanhouse`, porta `5433` — também funciona em pgAdmin/DBeaver):
+
 ```bash
-docker exec lanhouse-cassandra1 nodetool status
+docker exec -it lanhouse-postgres psql -U lanhouse -d lanhouse
 ```
-- **Tolerância a 1 falha (2/3 réplicas ativas = QUORUM mantido):**
-  ```bash
-  docker stop lanhouse-cassandra1
-  ```
-  Mesmo derrubando o nó `cassandra1` (porta `9042`), o Backend faz failover imediato para `cassandra2` (`:9043`) ou `cassandra3` (`:9044`) e os gráficos de telemetria continuam funcionando normalmente.
-- **Perda de Quórum (1/3 réplica ativa = HTTP 503):**
-  ```bash
-  docker stop lanhouse-cassandra2
-  ```
-  Com 2 nós desligados, o nível `QUORUM` (que exige no mínimo 2 réplicas) falha e o Backend retorna `HTTP 503 Service Unavailable (DB_UNAVAILABLE: cassandra)` sem afetar o PostgreSQL nem o MongoDB.
-- **Recuperação do cluster:**
-  ```bash
-  docker start lanhouse-cassandra1 lanhouse-cassandra2
-  ```
+
+```sql
+\dt
+SELECT id, codigo, grupo, status FROM maquinas;
+SELECT * FROM sessoes_uso ORDER BY inicio DESC LIMIT 5;
+```
+
+**MongoDB** (Replica Set `rs0`):
+
+```bash
+docker exec -it lanhouse-mongo1 mongosh lanhouse
+```
+
+```javascript
+rs.status().members.map(m => m.name + " " + m.stateStr)
+db.events.find().sort({ timestamp: -1 }).limit(5)
+```
+
+**Cassandra** (keyspace `lanhouse`, RF = 3):
+
+```bash
+docker exec -it lanhouse-cassandra1 cqlsh
+```
+
+```sql
+DESCRIBE KEYSPACE lanhouse;
+CONSISTENCY QUORUM;
+SELECT machine_id, hostname, ts, cpu_pct, ram_pct FROM lanhouse.latest_metrics_by_machine;
+```
+
+### 12.7. Testes de tolerância a falhas (Teorema CAP)
+
+**Pela interface (simulação):** em **Bancos & API**, ligue *Simular indisponibilidade* em um banco. O back-end passa a responder `503 DB_UNAVAILABLE` para aquele banco e a interface mostra o aviso só nas áreas que dependem dele:
+
+| Banco "fora" | Efeito esperado |
+|---|---|
+| PostgreSQL | Cadastros, sessões e mapa mostram erro; telemetria (Cassandra) e eventos (MongoDB) continuam. |
+| MongoDB | A tela de Eventos mostra erro; sessões e cadastros **continuam funcionando** e a resposta traz o aviso de que o evento não foi gravado. |
+| Cassandra | Gráficos e barras de CPU/RAM mostram aviso; o restante segue normal. |
+
+Desligue a chave para restabelecer.
+
+**Derrubando containers de verdade:**
+
+Cassandra (3 nós, RF = 3, `QUORUM` exige 2 réplicas):
+
+```bash
+docker stop lanhouse-cassandra1
+```
+
+Com **1 nó parado**, a telemetria continua funcionando: o back-end troca de coordenador (portas 9042 → 9043/9044) e o `QUORUM` (2 de 3) é atingido.
+
+```bash
+docker stop lanhouse-cassandra2
+```
+
+Com **2 nós parados**, o `QUORUM` não é atingido: `/api/health` mostra o Cassandra `down` e as rotas de métricas respondem `503`, sem afetar PostgreSQL nem MongoDB.
+
+MongoDB (Replica Set com 3 membros):
+
+```bash
+docker stop lanhouse-mongo1
+```
+
+Os membros restantes elegem um novo primário em alguns segundos e o back-end passa a gravar nele automaticamente (portas 27018/27019). Com 2 membros parados não há maioria para eleger primário: eventos ficam indisponíveis (`503`) e as sessões continuam com aviso.
+
+Restabelecer tudo:
+
+```bash
+docker start lanhouse-cassandra1 lanhouse-cassandra2 lanhouse-mongo1
+```
+
+### 12.8. Teste automatizado da API
+
+O arquivo `Backend/tests/teste_api.py` faz mais de 200 chamadas em todas as rotas (dados válidos e inválidos, conflitos, simulação de queda dos 3 bancos) e confere os códigos HTTP do contrato. Com os bancos e o back-end rodando:
+
+```bash
+cd Backend
+.venv\Scripts\python tests\teste_api.py
+```
+
+(Linux/macOS: `.venv/bin/python tests/teste_api.py`.) O resultado esperado termina em `RESULTADO: OK - nenhuma falha.` Os registros criados pelo teste são excluídos ao final.
+
+### 12.9. Parar, reiniciar e zerar os dados
+
+| Objetivo | Comando |
+|---|---|
+| Parar o back-end/front-end | Feche as janelas ou pressione `Ctrl+C` |
+| Parar os bancos (mantém os dados) | `docker compose stop` |
+| Subir de novo depois | `docker compose up -d` |
+| Remover os containers (mantém os dados nos volumes) | `docker compose down` |
+| **Zerar tudo** e voltar aos dados de exemplo | `docker compose down -v` e depois `docker compose up -d` |
+
+> Os scripts de `Banco/PostgreSql` só rodam quando o volume do PostgreSQL está vazio. Para reaplicá-los, use `docker compose down -v`.
+
+### 12.10. Solução de problemas
+
+| Sintoma | Causa provável e solução |
+|---|---|
+| `docker: error during connect` / *cannot find the file specified* | O Docker Desktop não está aberto. Abra-o e espere *Engine running*. |
+| `port is already allocated` ao subir os containers | Outro programa usa uma das portas da seção 12.1. Feche-o (ou pare outro container com `docker ps` / `docker stop <nome>`). |
+| Cassandra não fica `healthy` / reinicia sozinho | Falta de memória para o Docker. Aumente para 4 GB ou mais em *Settings → Resources* e rode `docker compose up -d` de novo. |
+| `/api/health` mostra MongoDB `down` | Veja se o Replica Set foi criado: `docker logs lanhouse-mongo-init`. Para repetir a inicialização: `docker compose up -d mongo-init-replica`. |
+| Painel mostra **"API indisponível"** | O back-end não está rodando ou ainda está iniciando. Confira <http://localhost:8000/api/health> e a janela do back-end. |
+| Painel mostra dados diferentes dos bancos | Ele pode estar no modo *Demonstração (mock)*. Vá em **Bancos & API → Fonte de dados → API real → Salvar e recarregar**. |
+| `python` não é reconhecido | Reinstale o Python marcando *Add python.exe to PATH*, ou use `py` no lugar de `python`. |
+| Erro ao instalar `cassandra-driver` | Use Python 3.10 a 3.14. Versões mais novas podem não ter pacote pronto da biblioteca. |
+
+### 12.11. Estrutura de pastas
+
+```text
+LanHouse/
+├── docker-compose.yml          bancos: PostgreSQL, MongoDB (3 nós) e Cassandra (3 nós)
+├── iniciar_tudo.bat            Windows: sobe bancos + back-end + front-end
+├── iniciar_backend.bat         Windows: cria o venv, instala dependências e roda a API
+├── Banco/
+│   ├── PostgreSql/             01_ddl (tabelas) e 02_dml (dados de exemplo)
+│   └── Cassandra/              01_ddl (keyspace RF=3 e tabelas de métricas)
+├── Backend/
+│   ├── .env.example            configuração (portas e credenciais dos bancos)
+│   ├── requirements.txt
+│   ├── run.py                  inicia o Uvicorn na porta 8000
+│   ├── app/
+│   │   ├── main.py             FastAPI, CORS e tratamento padronizado de erros
+│   │   ├── schemas.py          validações compartilhadas (limites e domínios dos campos)
+│   │   ├── database/           conexões PostgreSQL, MongoDB (failover) e simulação de queda
+│   │   ├── routers/            rotas REST (máquinas, sessões, cadastros, eventos, métricas…)
+│   │   └── services/           Cassandra (QUORUM, seed, coletor) e gravação de eventos
+│   └── tests/teste_api.py      teste de ponta a ponta da API
+└── Frontend/
+    ├── index.html, css/, js/   painel web (HTML + CSS + JavaScript puro)
+    ├── serve.py, iniciar.bat   servidor local na porta 5173
+    └── API.md                  contrato da API usado pelo front-end
+```

@@ -3,6 +3,8 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
+from app.schemas import PaymentMethod, EndPaymentStatus, PaymentStatus
+
 from app.database.postgres import get_db_cursor
 from app.services.event_logger import log_event
 from app.pricing import calculate_session_amount
@@ -40,12 +42,12 @@ class StartSessionBody(BaseModel):
     plan_id: int
 
 class EndSessionBody(BaseModel):
-    payment_method: Optional[str] = None
-    payment_status: Optional[str] = "pago"
+    payment_method: Optional[PaymentMethod] = None
+    payment_status: Optional[EndPaymentStatus] = "pago"
 
 class PatchSessionBody(BaseModel):
-    payment_status: Optional[str] = None
-    payment_method: Optional[str] = None
+    payment_status: Optional[PaymentStatus] = None
+    payment_method: Optional[PaymentMethod] = None
 
 @router.get("")
 def list_sessions(

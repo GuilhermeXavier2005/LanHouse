@@ -2,7 +2,9 @@ import json
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+
+from app.schemas import Text
 from bson import ObjectId
 
 from app.database.mongodb import get_mongo_db
@@ -29,21 +31,43 @@ def _build_id_query(id: str) -> dict:
         return {"$or": [{"_id": ObjectId(id)}, {"_id": id}]}
     return {"_id": id}
 
+def _validate_iso_timestamp(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError("Data/hora inválida (use o formato ISO 8601, ex.: 2026-11-15T20:30:00Z).")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    # Normaliza para UTC com sufixo Z (mesmo formato gravado pelo back-end), mantendo a ordenação por texto
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
 class EventCreate(BaseModel):
-    type: str
+    type: Text(60)
     machine_id: int
     machine_hostname: Optional[str] = None
     session_id: Optional[int] = None
     timestamp: Optional[str] = None
-    payload: Dict[str, Any] = {}
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("timestamp")
+    @classmethod
+    def _check_timestamp(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_iso_timestamp(v)
 
 class EventUpdate(BaseModel):
-    type: Optional[str] = None
+    type: Optional[Text(60)] = None
     machine_id: Optional[int] = None
     machine_hostname: Optional[str] = None
     session_id: Optional[int] = None
     timestamp: Optional[str] = None
     payload: Optional[Dict[str, Any]] = None
+
+    @field_validator("timestamp")
+    @classmethod
+    def _check_timestamp(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_iso_timestamp(v)
 
 @router.get("/events")
 def list_events(
@@ -52,8 +76,8 @@ def list_events(
     from_date: Optional[str] = Query(None, alias="from"),
     to_date: Optional[str] = Query(None, alias="to"),
     q: Optional[str] = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
 ):
     db = get_mongo_db()
     query: Dict[str, Any] = {}
@@ -153,7 +177,7 @@ def delete_event(id: str):
     return None
 
 @router.get("/machines/{id}/events")
-def get_machine_events(id: int, type: Optional[str] = None, limit: int = 20):
+def get_machine_events(id: int, type: Optional[str] = None, limit: int = Query(20, ge=1, le=1000)):
     db = get_mongo_db()
     coll = db["events"]
 

@@ -25,18 +25,17 @@ Abra <http://localhost:5173>. (Em Linux/macOS use `python3 serve.py`.)
 
 ## Modo demonstração × API real
 
-Por padrão o front roda em **modo demonstração**: uma API simulada roda dentro do
-navegador (`js/api/mock/`), com dados de exemplo salvos no `localStorage`. Ela segue
-exatamente o contrato de [`API.md`](API.md), inclusive validações (422), conflitos (409) e
-indisponibilidade de banco (503).
+Por padrão o front usa a **API real** do back-end (`http://localhost:8000/api`), ligada aos
+três bancos. Veja no [README principal](../README.md#12-como-executar-o-projeto) como subir
+os bancos e o back-end.
 
-Quando o back-end existir:
+Também existe um **modo demonstração**: uma API simulada roda dentro do navegador
+(`js/api/mock/`), com dados de exemplo salvos no `localStorage`, seguindo o contrato de
+[`API.md`](API.md) (inclusive 422, 409 e 503). Serve para mostrar a interface sem back-end.
 
-1. Implemente os endpoints de [`API.md`](API.md) e libere CORS para `http://localhost:5173`.
-2. No painel, vá em **Bancos & API → Fonte de dados**, escolha *API real*, informe a URL
-   (ex.: `http://localhost:8000/api`), clique em *Testar conexão* e depois *Salvar*.
-
-Também dá para mudar o padrão em `js/config.js` (`useMock: false`).
+Para alternar, vá em **Bancos & API → Fonte de dados**, escolha *API real* ou
+*Demonstração (mock)*, clique em *Testar conexão* e depois em *Salvar e recarregar*.
+O padrão fica em `js/config.js` (`useMock`).
 
 ## Simulação de falhas nos bancos
 

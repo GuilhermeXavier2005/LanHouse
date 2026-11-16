@@ -1,12 +1,13 @@
 // Configuração do front-end.
-// `useMock: true` usa a API simulada em js/api/mock (nenhum back-end necessário).
-// Quando o back-end estiver pronto, troque para a API real na tela "Bancos & API"
-// ou altere os valores padrão abaixo.
+// Padrão: API real do back-end FastAPI (http://localhost:8000/api), ligada aos
+// três bancos (PostgreSQL, MongoDB e Cassandra).
+// `useMock: true` usa a API simulada em js/api/mock (sem back-end, dados só no navegador).
+// A escolha pode ser trocada na tela "Bancos & API" e fica salva no navegador.
 
 const STORAGE_KEY = 'lanhouse-config';
 
 const defaults = {
-  useMock: true,
+  useMock: false,
   apiBaseUrl: 'http://localhost:8000/api',
   timeoutMs: 8000,
   pollMs: 5000,

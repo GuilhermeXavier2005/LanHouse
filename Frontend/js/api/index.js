@@ -14,6 +14,8 @@ const crud = (base) => ({
 
 export const api = {
   health: () => get('/health'),
+  // Liga/desliga a simulação de queda de um banco no back-end (demonstração do Teorema CAP)
+  simulate: (service, down) => post('/health/simulate', { service, down }),
 
   // PostgreSQL (cadastro e estado atual) + rotas auxiliares de Mongo/Cassandra por máquina
   machines: {

@@ -2,9 +2,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
+import psycopg2
+from pymongo.errors import PyMongoError
 
 from app import config
-from app.errors import ApiError, api_error_handler, validation_error_handler
+from app.errors import (
+    ApiError,
+    api_error_handler,
+    validation_error_handler,
+    postgres_error_handler,
+    mongo_error_handler,
+    unhandled_error_handler,
+)
 from app.database.postgres import ensure_schema_extension
 from app.database.mongodb import seed_initial_events
 from app.services.cassandra_service import (
@@ -23,8 +32,8 @@ async def lifespan(app: FastAPI):
     ensure_schema_extension()
     seed_initial_events()
     start_cassandra_background_worker()
-    print("Sistema pronto na porta 8000!")
-    print("Swagger UI disponível em: http://localhost:8000/docs")
+    print(f"Sistema pronto na porta {config.PORT}!")
+    print(f"Swagger UI disponível em: http://localhost:{config.PORT}/docs")
     print("=" * 60)
     yield
     print("Encerrando LanHouse Monitor Back-end...")
@@ -49,6 +58,9 @@ app.add_middleware(
 # Exception handlers padronizados conforme Frontend/API.md
 app.add_exception_handler(ApiError, api_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
+app.add_exception_handler(psycopg2.Error, postgres_error_handler)
+app.add_exception_handler(PyMongoError, mongo_error_handler)
+app.add_exception_handler(Exception, unhandled_error_handler)
 
 # Registra todos os roteadores sob o prefixo /api (contrato oficial)
 api_routers = [

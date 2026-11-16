@@ -1,7 +1,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.database.postgres import get_db_cursor
 from app.database.state import is_simulated_down
@@ -22,16 +22,27 @@ router = APIRouter(tags=["Métricas (Cassandra)"])
 
 class MetricPayload(BaseModel):
     ts: Optional[str] = None
-    cpu_pct: float = 0.0
-    gpu_pct: float = 0.0
-    ram_pct: float = 0.0
-    ram_used_gb: Optional[float] = None
-    ram_total_gb: float = 16.0
-    disk_pct: float = 0.0
-    net_in_kbps: int = 0
-    net_out_kbps: int = 0
-    latency_ms: float = 10.0
-    temp_c: float = 45.0
+    cpu_pct: float = Field(0.0, ge=0, le=100)
+    gpu_pct: float = Field(0.0, ge=0, le=100)
+    ram_pct: float = Field(0.0, ge=0, le=100)
+    ram_used_gb: Optional[float] = Field(None, ge=0)
+    ram_total_gb: float = Field(16.0, gt=0)
+    disk_pct: float = Field(0.0, ge=0, le=100)
+    net_in_kbps: int = Field(0, ge=0)
+    net_out_kbps: int = Field(0, ge=0)
+    latency_ms: float = Field(10.0, ge=0)
+    temp_c: float = Field(45.0, ge=-50, le=150)
+
+    @field_validator("ts")
+    @classmethod
+    def _check_ts(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        try:
+            datetime.fromisoformat(v.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError("Data/hora inválida (use o formato ISO 8601, ex.: 2026-11-15T20:30:00Z).")
+        return v
 
 # Cache em memória das máquinas para que a telemetria do Cassandra continue
 # funcionando normalmente mesmo quando o PostgreSQL estiver indisponível (Teorema CAP).

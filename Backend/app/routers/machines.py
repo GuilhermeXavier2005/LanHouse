@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Query, Body
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.schemas import Text, OptText, IpAddress, Zone, MachineSettableStatus
 
 from app.database.postgres import get_db_cursor
 from app.services.event_logger import log_event
@@ -68,21 +70,25 @@ def format_machine(row: dict, active_session: Optional[dict] = None, last_sessio
     }
 
 class MachineCreateUpdate(BaseModel):
-    hostname: str
-    zone: str
-    cpu: str
-    gpu: Optional[str] = None
-    ram_gb: int
-    storage_gb: int
-    os: Optional[str] = "Windows 11"
-    ip: Optional[str] = None
-    mac: Optional[str] = None
+    hostname: Text(30)
+    zone: Zone
+    cpu: Text(150)
+    gpu: OptText(150) = None
+    ram_gb: int = Field(gt=0, le=9999)
+    storage_gb: int = Field(gt=0, le=999_999)
+    os: OptText(100) = "Windows 11"
+    ip: IpAddress = None
+    mac: OptText(30) = None
     notes: Optional[str] = ""
-    status: Optional[str] = "disponivel"
+    status: Optional[MachineSettableStatus] = "disponivel"
+
+class MachineUpdate(MachineCreateUpdate):
+    # O PUT não altera o estado (use PATCH /machines/{id}/status); o campo é ignorado.
+    status: Optional[str] = None
 
 class StatusUpdate(BaseModel):
-    status: str
-    reason: Optional[str] = "Alteração manual"
+    status: MachineSettableStatus
+    reason: OptText(200) = "Alteração manual"
 
 @router.get("")
 def list_machines(
@@ -219,7 +225,7 @@ def create_machine(data: MachineCreateUpdate):
     return res
 
 @router.put("/{id}")
-def update_machine(id: int, data: MachineCreateUpdate):
+def update_machine(id: int, data: MachineUpdate):
     hostname = data.hostname.strip().upper()
     db_group = map_zone_to_db(data.zone)
 
@@ -362,7 +368,7 @@ def get_machine_programs(id: int):
     return {"items": items, "total": len(items)}
 
 class SetProgramsBody(BaseModel):
-    program_ids: List[int]
+    program_ids: List[int] = Field(max_length=500)
 
 @router.put("/{id}/programs")
 def set_machine_programs(id: int, body: SetProgramsBody):

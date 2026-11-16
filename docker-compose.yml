@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -31,10 +29,10 @@ services:
     volumes:
       - mongo1_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--port", "27017", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "--port", "27017", "--quiet", "--eval", "db.adminCommand('ping')"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 20
 
   mongo2:
     image: mongo:7.0
@@ -45,6 +43,11 @@ services:
       - "27018:27017"
     volumes:
       - mongo2_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27017", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   mongo3:
     image: mongo:7.0
@@ -55,21 +58,32 @@ services:
       - "27019:27017"
     volumes:
       - mongo3_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27017", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   mongo-init-replica:
     image: mongo:7.0
     container_name: lanhouse-mongo-init
     depends_on:
-      - mongo1
-      - mongo2
-      - mongo3
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_healthy
+      mongo3:
+        condition: service_healthy
     restart: "no"
     entrypoint:
       - bash
       - -c
       - |
         echo "Aguardando nós do MongoDB..."
-        sleep 3
+        for i in $$(seq 1 30); do
+          mongosh --host mongo1:27017 --quiet --eval "db.adminCommand('ping')" > /dev/null 2>&1 && break
+          sleep 2
+        done
         mongosh --host mongo1:27017 --eval '
           try {
             var status = rs.status();
@@ -103,7 +117,6 @@ services:
     ports:
       - "9042:9042"
     volumes:
-      - ./Banco/Cassandra/01_ddl_lanhouse.cql:/docker-entrypoint-initdb.d/01_ddl_lanhouse.cql:ro
       - cassandra1_data:/var/lib/cassandra
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces' || exit 1"]
@@ -163,6 +176,28 @@ services:
       timeout: 10s
       retries: 15
       start_period: 40s
+
+  # Aplica Banco/Cassandra/01_ddl_lanhouse.cql (keyspace RF=3 + tabelas) quando os 3 nós estão prontos.
+  # O script é idempotente (IF NOT EXISTS); o back-end também garante o schema ao iniciar.
+  cassandra-init:
+    image: cassandra:4.1
+    container_name: lanhouse-cassandra-init
+    depends_on:
+      cassandra3:
+        condition: service_healthy
+    restart: "no"
+    volumes:
+      - ./Banco/Cassandra/01_ddl_lanhouse.cql:/scripts/01_ddl_lanhouse.cql:ro
+    entrypoint:
+      - bash
+      - -c
+      - |
+        for i in $$(seq 1 30); do
+          cqlsh cassandra1 9042 -f /scripts/01_ddl_lanhouse.cql && echo "Schema Cassandra aplicado." && exit 0
+          echo "Cassandra ainda não está pronto, tentando novamente..."
+          sleep 5
+        done
+        exit 1
 
 volumes:
   pgdata:

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter
+from typing import Literal
 from pydantic import BaseModel
 
 from app.database.postgres import check_postgres_health
@@ -10,7 +11,7 @@ from app.database.state import set_simulated_down, get_simulated_state
 router = APIRouter(tags=["Saúde"])
 
 class SimulateBody(BaseModel):
-    service: str
+    service: Literal["postgres", "mongodb", "cassandra"]
     down: bool
 
 @router.get("/health")
@@ -24,6 +25,9 @@ def get_health():
         "mongodb": mg,
         "cassandra": cs,
     }
+    simulated = get_simulated_state()
+    for key, svc in services.items():
+        svc["simulated"] = bool(simulated.get(key))
 
     is_degraded = any(s.get("status") != "up" for s in services.values())
 

@@ -1,7 +1,12 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.schemas import (
+    Text, OptText, Money, PlanKind, PlanBilling, ProgramCategory, ProgramLicense,
+    IncidentSeverity, IncidentStatus, MaintenanceType, MaintenanceStatus,
+)
 
 from app.database.postgres import get_db_cursor
 from app.services.event_logger import log_event
@@ -14,14 +19,14 @@ router = APIRouter(tags=["Cadastros"])
 # ==============================================================================
 
 class UserCreate(BaseModel):
-    name: str
-    nickname: str
-    phone: Optional[str] = None
+    name: Text(120)
+    nickname: Text(60)
+    phone: OptText(30) = None
 
 class UserPatch(BaseModel):
-    name: Optional[str] = None
-    nickname: Optional[str] = None
-    phone: Optional[str] = None
+    name: Optional[Text(120)] = None
+    nickname: Optional[Text(60)] = None
+    phone: OptText(30) = None
 
 @router.get("/users")
 def list_users(q: Optional[str] = None, limit: Optional[int] = None, offset: int = 0):
@@ -148,20 +153,20 @@ def delete_user(id: int):
 # ==============================================================================
 
 class PlanCreate(BaseModel):
-    name: str
-    kind: str  # plano | servico
-    billing: str  # hora | pacote | unidade
-    price: float
-    hours: Optional[float] = None
+    name: Text(120)
+    kind: PlanKind
+    billing: PlanBilling
+    price: Money
+    hours: Optional[float] = Field(default=None, gt=0, le=9999)
     description: Optional[str] = ""
     active: Optional[bool] = True
 
 class PlanPatch(BaseModel):
-    name: Optional[str] = None
-    kind: Optional[str] = None
-    billing: Optional[str] = None
-    price: Optional[float] = None
-    hours: Optional[float] = None
+    name: Optional[Text(120)] = None
+    kind: Optional[PlanKind] = None
+    billing: Optional[PlanBilling] = None
+    price: Optional[Money] = None
+    hours: Optional[float] = Field(default=None, gt=0, le=9999)
     description: Optional[str] = None
     active: Optional[bool] = None
 
@@ -282,18 +287,18 @@ def delete_plan(id: int):
 # ==============================================================================
 
 class ProgramCreate(BaseModel):
-    name: str
-    category: str
-    publisher: Optional[str] = ""
-    version: Optional[str] = ""
-    license: Optional[str] = "gratuito"
+    name: Text(120)
+    category: ProgramCategory
+    publisher: OptText(100) = ""
+    version: OptText(50) = ""
+    license: Optional[ProgramLicense] = "gratuito"
 
 class ProgramPatch(BaseModel):
-    name: Optional[str] = None
-    category: Optional[str] = None
-    publisher: Optional[str] = None
-    version: Optional[str] = None
-    license: Optional[str] = None
+    name: Optional[Text(120)] = None
+    category: Optional[ProgramCategory] = None
+    publisher: OptText(100) = None
+    version: OptText(50) = None
+    license: Optional[ProgramLicense] = None
 
 def format_program(row: dict) -> dict:
     cat = row["categoria"].lower() if row.get("categoria") else "utilitario"
@@ -404,6 +409,13 @@ def update_program(id: int, data: ProgramPatch):
         publisher = data.publisher if data.publisher is not None else current.get("fabricante")
         license_val = data.license if data.license is not None else current.get("licenca")
 
+        cur.execute(
+            "SELECT id FROM softwares WHERE LOWER(nome) = LOWER(%s) AND COALESCE(versao, '') = COALESCE(%s, '') AND id != %s;",
+            (name, version, id),
+        )
+        if cur.fetchone():
+            raise ValidationError({"name": "Já existe este programa com a mesma versão."})
+
         cur.execute("""
             UPDATE softwares
             SET nome = %s, versao = %s, categoria = %s, fabricante = %s, licenca = %s
@@ -428,19 +440,19 @@ def delete_program(id: int):
 
 class IncidentCreate(BaseModel):
     machine_id: int
-    title: str
+    title: Text(150)
     description: Optional[str] = ""
-    severity: str  # baixa, media, alta, critica
-    status: Optional[str] = "aberto"  # aberto, em_andamento, resolvido
-    reported_by: Optional[str] = None
+    severity: IncidentSeverity
+    status: Optional[IncidentStatus] = "aberto"
+    reported_by: OptText(120) = None
 
 class IncidentPatch(BaseModel):
     machine_id: Optional[int] = None
-    title: Optional[str] = None
+    title: Optional[Text(150)] = None
     description: Optional[str] = None
-    severity: Optional[str] = None
-    status: Optional[str] = None
-    reported_by: Optional[str] = None
+    severity: Optional[IncidentSeverity] = None
+    status: Optional[IncidentStatus] = None
+    reported_by: OptText(120) = None
 
 def format_incident(row: dict) -> dict:
     st = row["status"]
@@ -528,13 +540,11 @@ def create_incident(data: IncidentCreate):
         if not m:
             raise ValidationError({"machine_id": "Máquina inexistente."})
 
-        resolved_at = datetime.now(timezone.utc) if db_status == "resolvido" else None
-
         cur.execute("""
             INSERT INTO incidentes (maquina_id, titulo, descricao, severidade, status, reportado_por, aberto_em, resolvido_em)
-            VALUES (%s, %s, %s, %s, %s, %s, NOW(), %s)
+            VALUES (%s, %s, %s, %s, %s, %s, NOW(), CASE WHEN %s THEN NOW() ELSE NULL END)
             RETURNING id;
-        """, (data.machine_id, data.title, data.description, data.severity, db_status, data.reported_by, resolved_at))
+        """, (data.machine_id, data.title, data.description, data.severity, db_status, data.reported_by, db_status == "resolvido"))
         new_id = cur.fetchone()["id"]
 
     warnings = []
@@ -566,6 +576,10 @@ def update_incident(id: int, data: IncidentPatch):
             raise NotFoundError("Incidente")
 
         machine_id = data.machine_id if data.machine_id is not None else prev["maquina_id"]
+        if machine_id != prev["maquina_id"]:
+            cur.execute("SELECT id FROM maquinas WHERE id = %s;", (machine_id,))
+            if not cur.fetchone():
+                raise ValidationError({"machine_id": "Máquina inexistente."})
         title = data.title if data.title is not None else prev["titulo"]
         description = data.description if data.description is not None else prev.get("descricao")
         severity = data.severity if data.severity is not None else prev["severidade"]
@@ -578,7 +592,7 @@ def update_incident(id: int, data: IncidentPatch):
 
         resolved_clause = ""
         if db_status == "resolvido" and prev["status"] != "resolvido":
-            resolved_clause = ", resolvido_em = NOW()"
+            resolved_clause = ", resolvido_em = GREATEST(NOW(), aberto_em)"
         elif db_status != "resolvido":
             resolved_clause = ", resolvido_em = NULL"
 
@@ -606,22 +620,22 @@ def delete_incident(id: int):
 class MaintenanceCreate(BaseModel):
     machine_id: int
     incident_id: Optional[int] = None
-    type: str  # preventiva, corretiva
-    description: str
-    technician: Optional[str] = "Equipe técnica"
-    cost: Optional[float] = 0.0
-    scheduled_for: Optional[str] = None
-    status: Optional[str] = "agendada"  # agendada, em_andamento, concluida
+    type: MaintenanceType
+    description: Text(5000)
+    technician: OptText(120) = "Equipe técnica"
+    cost: Optional[Money] = 0.0
+    scheduled_for: Optional[date] = None
+    status: Optional[MaintenanceStatus] = "agendada"
 
 class MaintenancePatch(BaseModel):
     machine_id: Optional[int] = None
     incident_id: Optional[int] = None
-    type: Optional[str] = None
-    description: Optional[str] = None
-    technician: Optional[str] = None
-    cost: Optional[float] = None
-    scheduled_for: Optional[str] = None
-    status: Optional[str] = None
+    type: Optional[MaintenanceType] = None
+    description: Optional[Text(5000)] = None
+    technician: OptText(120) = None
+    cost: Optional[Money] = None
+    scheduled_for: Optional[date] = None
+    status: Optional[MaintenanceStatus] = None
 
 def format_maintenance(row: dict) -> dict:
     return {
@@ -710,13 +724,13 @@ def create_maintenance(data: MaintenanceCreate):
             if not cur.fetchone():
                 raise ValidationError({"incident_id": "Incidente inexistente."})
 
-        completed_at = datetime.now(timezone.utc) if data.status == "concluida" else None
-
+        status = data.status or "agendada"
         cur.execute("""
-            INSERT INTO manutencoes (maquina_id, incidente_id, tipo, descricao, responsavel_tecnico, custo, agendada_para, status, fim)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO manutencoes (maquina_id, incidente_id, tipo, descricao, responsavel_tecnico, custo, agendada_para, status, inicio, fim)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), CASE WHEN %s THEN NOW() ELSE NULL END)
             RETURNING id;
-        """, (data.machine_id, data.incident_id, data.type, data.description, data.technician, data.cost or 0.0, data.scheduled_for or None, data.status, completed_at))
+        """, (data.machine_id, data.incident_id, data.type, data.description, data.technician, data.cost or 0.0,
+              data.scheduled_for or date.today(), status, status == "concluida"))
         new_id = cur.fetchone()["id"]
 
     return get_maintenance(new_id)
@@ -732,6 +746,14 @@ def update_maintenance(id: int, data: MaintenancePatch):
 
         machine_id = data.machine_id if data.machine_id is not None else prev["maquina_id"]
         incident_id = data.incident_id if "incident_id" in data.model_fields_set else prev.get("incidente_id")
+        if machine_id != prev["maquina_id"]:
+            cur.execute("SELECT id FROM maquinas WHERE id = %s;", (machine_id,))
+            if not cur.fetchone():
+                raise ValidationError({"machine_id": "Máquina inexistente."})
+        if incident_id is not None and incident_id != prev.get("incidente_id"):
+            cur.execute("SELECT id FROM incidentes WHERE id = %s;", (incident_id,))
+            if not cur.fetchone():
+                raise ValidationError({"incident_id": "Incidente inexistente."})
         mt_type = data.type if data.type is not None else prev["tipo"]
         description = data.description if data.description is not None else prev["descricao"]
         technician = data.technician if data.technician is not None else prev.get("responsavel_tecnico")
@@ -741,7 +763,7 @@ def update_maintenance(id: int, data: MaintenancePatch):
 
         fim_clause = ""
         if status == "concluida" and prev.get("status") != "concluida":
-            fim_clause = ", fim = NOW()"
+            fim_clause = ", fim = GREATEST(NOW(), inicio)"
         elif status != "concluida":
             fim_clause = ", fim = NULL"
 

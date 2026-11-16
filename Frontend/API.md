@@ -70,12 +70,18 @@ Não depende de nenhum banco estar no ar.
   "status": "degraded",
   "checked_at": "2026-10-30T18:30:00Z",
   "services": {
-    "postgres":  { "status": "up",   "latency_ms": 4 },
-    "mongodb":   { "status": "down", "latency_ms": null, "error": "connection refused" },
-    "cassandra": { "status": "up",   "latency_ms": 11 }
+    "postgres":  { "status": "up",   "latency_ms": 4,    "simulated": false },
+    "mongodb":   { "status": "down", "latency_ms": null, "error": "connection refused", "simulated": false },
+    "cassandra": { "status": "up",   "latency_ms": 11,   "simulated": false }
   }
 }
 ```
+
+### `POST /health/simulate`
+
+`{ "service": "postgres" | "mongodb" | "cassandra", "down": true | false }` — liga/desliga a
+simulação de queda de um banco no back-end (o banco passa a responder `503 DB_UNAVAILABLE`).
+`simulated` em `GET /health` indica quais simulações estão ativas.
 
 ## Máquinas — PostgreSQL
 

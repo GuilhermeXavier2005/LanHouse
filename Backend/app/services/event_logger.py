@@ -20,6 +20,11 @@ def log_event(
     """
     warning_msg = "Evento não registrado: MongoDB indisponível. O registro principal foi salvo no PostgreSQL."
 
+    # Se um evento desta mesma requisição já falhou, não tenta de novo (evita somar
+    # vários timeouts do MongoDB e estourar o tempo limite do front-end).
+    if warnings is not None and warning_msg in warnings:
+        return False
+
     if is_simulated_down("mongodb"):
         if warnings is not None and warning_msg not in warnings:
             warnings.append(warning_msg)
